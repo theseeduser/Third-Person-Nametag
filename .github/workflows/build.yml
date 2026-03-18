@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  # Node.js 24 강제 사용 옵션 (경고 해결)
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     strategy:
@@ -14,15 +18,16 @@ jobs:
           - name: Android SO
             runs-on: ubuntu-latest
             artifact_name: libMod
-            artifact_path: build/libMod.so # CMakeLists.txt에서 정한 이름에 맞춰 확인
+            artifact_path: build/libMod.so
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runs-on }}
 
     steps:
+      # 액션 버전들을 최신(v4)으로 유지하여 Node.js 경고를 방지합니다.
       - uses: actions/checkout@v4
         with:
-          submodules: recursive # 만약 나중에 서브모듈로 바꿀 경우를 대비
+          submodules: recursive
 
       - name: Set up NDK (Android)
         uses: nttld/setup-ndk@v1
