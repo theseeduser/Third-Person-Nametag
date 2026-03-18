@@ -1,146 +1,97 @@
-#ifdef _WIN32
-#include <Windows.h>
-#include <cstdint>
-#include <thread>
+#include <jni.h>
+#include <android/log.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <vector>
+#include <string>
+#include <fstream>
+#include <sstream>
 
-static constexpr size_t INSTRUCTION_SIZE = 6;
-static uint8_t  g_originalBytes[INSTRUCTION_SIZE] = {};
-static void*    g_instructionPointer = nullptr;
-static bool     g_patched = false;
+#define LOG_TAG "MCPE_MOD"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-constexpr uint8_t THIRD_PERSON_NAMETAG_SIG[] = {
-    0x0F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x49, 0x8B, 0x45, 0x00, 0x49, 0x8B, 0xCD, 0x48, 0x8B, 0x80,
-    0x00, 0x00, 0x00, 0x00, 0xFF, 0x15, 0x00, 0x00, 0x00, 0x00, 0x84, 0xC0, 0x0F, 0x85
-};
-
-constexpr uint8_t THIRD_PERSON_NAMETAG_MASK[] = {
-    0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-    0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF
-};
-
-static uintptr_t FindPattern(uintptr_t base, size_t size,
-                             const uint8_t* pattern, const uint8_t* mask, size_t patternLen) {
-    const uint8_t* data = reinterpret_cast<const uint8_t*>(base);
-    for (size_t i = 0; i < size - patternLen; ++i) {
-        bool found = true;
-        for (size_t j = 0; j < patternLen; ++j) {
-            if (mask[j] == 0xFF && data[i + j] != pattern[j]) {
-                found = false;
+// libminecraftpe.so의 베이스 주소를 찾는 함수
+uintptr_t GetModuleBase(const std::string& moduleName) {
+    uintptr_t baseAddress = 0;
+    std::ifstream maps("/proc/self/maps");
+    std::string line;
+    while (std::getline(maps, line)) {
+        if (line.find(moduleName) != std::string::npos) {
+            std::istringstream iss(line);
+            std::string addressRange;
+            iss >> addressRange;
+            size_t dashPos = addressRange.find('-');
+            if (dashPos != std::string::npos) {
+                std::string startAddr = addressRange.substr(0, dashPos);
+                baseAddress = std::stoul(startAddr, nullptr, 16);
                 break;
             }
         }
-        if (found) return base + i;
     }
-    return 0;
+    return baseAddress;
 }
 
-static void ApplyPatch() {
-    if (!g_instructionPointer || g_patched) return;
-    DWORD protect;
-    VirtualProtect(g_instructionPointer, INSTRUCTION_SIZE, PAGE_EXECUTE_READWRITE, &protect);
-    memset(g_instructionPointer, 0x90, INSTRUCTION_SIZE);
-    VirtualProtect(g_instructionPointer, INSTRUCTION_SIZE, protect, &protect);
-    g_patched = true;
-}
+// 메모리 패치를 수행하는 함수
+void PatchMemory(uintptr_t address, const std::vector<uint8_t>& patchBytes) {
+    // 메모리 페이지 크기에 맞춰 정렬된 주소 계산
+    size_t pageSize = sysconf(_SC_PAGESIZE);
+    uintptr_t pageStart = address & ~(pageSize - 1);
 
-static void RemovePatch() {
-    if (!g_instructionPointer || !g_patched) return;
-    DWORD protect;
-    VirtualProtect(g_instructionPointer, INSTRUCTION_SIZE, PAGE_EXECUTE_READWRITE, &protect);
-    memcpy(g_instructionPointer, g_originalBytes, INSTRUCTION_SIZE);
-    VirtualProtect(g_instructionPointer, INSTRUCTION_SIZE, protect, &protect);
-    g_patched = false;
-}
-
-static void Initialize() {
-    HMODULE base = GetModuleHandleA(nullptr);
-    if (!base) return;
-
-    auto dosHeader = reinterpret_cast<PIMAGE_DOS_HEADER>(base);
-    auto ntHeaders = reinterpret_cast<PIMAGE_NT_HEADERS>(
-        reinterpret_cast<uintptr_t>(base) + dosHeader->e_lfanew);
-    size_t sizeOfImage = ntHeaders->OptionalHeader.SizeOfImage;
-
-    uintptr_t targetAddr = FindPattern(
-        reinterpret_cast<uintptr_t>(base), sizeOfImage,
-        THIRD_PERSON_NAMETAG_SIG, THIRD_PERSON_NAMETAG_MASK,
-        sizeof(THIRD_PERSON_NAMETAG_SIG));
-
-    if (targetAddr) {
-        g_instructionPointer = reinterpret_cast<void*>(targetAddr);
-        memcpy(g_originalBytes, g_instructionPointer, INSTRUCTION_SIZE);
-        ApplyPatch();
-    }
-}
-
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID /*reserved*/) {
-    if (reason == DLL_PROCESS_ATTACH) {
-        DisableThreadLibraryCalls(hModule);
-        std::thread(Initialize).detach();
-    } else if (reason == DLL_PROCESS_DETACH) {
-        RemovePatch();
-    }
-    return TRUE;
-}
-
-#else
-#include <cstdint>
-#include <cstring>
-#include <sys/mman.h>
-
-#include "pl/Gloss.h"
-#include "pl/Signature.h"
-
-static const char* NAMETAG_SIGNATURE =
-        "? ? 40 F9 "
-        "? ? ? EB "
-        "? ? ? 54 "
-        "? ? 40 F9 "
-        "? 81 40 F9 "
-        "E0 03 ? AA "
-        "00 01 3F D6 "
-        "? ? 00 37 "
-        "? ? 40 F9 "
-        "? ? ? A9 "
-        "? ? ? CB "
-        "? ? ? D3 "
-        "? ? 00 51 "
-        "? ? ? 8A";
-
-static constexpr size_t PATCH_OFFSET = 8;
-
-static const uint8_t PATCH_BYTES[4] = { 0x1F, 0x20, 0x03, 0xD5 };
-static const size_t  PATCH_SIZE     = sizeof(PATCH_BYTES);
-
-static bool PatchMemory(void* addr, const void* data, size_t size) {
-    uintptr_t page_start = (uintptr_t)addr & ~(4095UL);
-    size_t    page_size  = ((uintptr_t)addr + size - page_start + 4095) & ~(4095UL);
-
-    if (mprotect((void*)page_start, page_size, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
-        return false;
+    // 메모리 보호 해제 (읽기, 쓰기, 실행 권한 부여)
+    if (mprotect((void*)pageStart, pageSize, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+        LOGE("메모리 권한 변경 실패! 주소: %x", address);
+        return;
     }
 
-    memcpy(addr, data, size);
-    __builtin___clear_cache((char*)addr, (char*)addr + size);
-    mprotect((void*)page_start, page_size, PROT_READ | PROT_EXEC);
-
-    return true;
-}
-
-static bool PatchNametag() {
-    uintptr_t addr = pl::signature::pl_resolve_signature(NAMETAG_SIGNATURE, "libminecraftpe.so");
-    if (addr == 0) {
-        return false;
+    // 바이트 덮어쓰기 (패치 적용)
+    for (size_t i = 0; i < patchBytes.size(); i++) {
+        *(uint8_t*)(address + i) = patchBytes[i];
     }
 
-    void* patch_target = reinterpret_cast<void*>(addr + PATCH_OFFSET);
-    return PatchMemory(patch_target, PATCH_BYTES, PATCH_SIZE);
+    LOGI("메모리 패치 성공! 대상 주소: %x", address);
+
+    // (선택사항) 권한을 원래대로 복구하려면 다시 mprotect 호출
 }
 
-__attribute__((constructor))
-void ThirdPersonNametag_Init() {
-    GlossInit(true);
-    PatchNametag();
+// 백그라운드 스레드에서 패치를 진행하는 함수
+void* ModMainThread(void*) {
+    LOGI("모드 스레드 시작됨...");
+
+    uintptr_t mcpeBase = 0;
+    // libminecraftpe.so가 메모리에 로드될 때까지 대기
+    while ((mcpeBase = GetModuleBase("libminecraftpe.so")) == 0) {
+        sleep(1);
+    }
+
+    LOGI("libminecraftpe.so 베이스 주소 발견: %x", mcpeBase);
+
+    // 지인분이 알려주신 오프셋
+    uintptr_t targetOffset = 0x961B6A4;
+    
+    // [핵심] 0x961B6A4는 함수의 시작점입니다. 
+    // 실제 분기문(if 애니메이션 꺼짐)의 오프셋을 Ghidra로 찾아 이 주소에 더해야 합니다.
+    // 임시로 함수 시작점 + 분기문까지의 거리(예: 0x2A)라고 가정하겠습니다.
+    uintptr_t exactPatchAddress = mcpeBase + targetOffset + /* 분기문 거리 */ 0x00; 
+
+    // 덮어씌울 헥스 코드 (예: ARM64 NOP 코드 -> 1F 20 03 D5)
+    // 이 부분은 기계어(Assembly)에 따라 달라집니다.
+    std::vector<uint8_t> patchHex = { 0x1F, 0x20, 0x03, 0xD5 }; 
+
+    // 패치 적용
+    PatchMemory(exactPatchAddress, patchHex);
+
+    return nullptr;
 }
 
-#endif
+// 안드로이드에서 라이브러리가 로드될 때 최초로 실행되는 진입점
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+    LOGI("모드 라이브러리가 로드되었습니다!");
+
+    // 메인 스레드를 멈추지 않기 위해 새로운 스레드에서 모드 로직 실행
+    pthread_t thread;
+    pthread_create(&thread, nullptr, ModMainThread, nullptr);
+
+    return JNI_VERSION_1_6;
+}
