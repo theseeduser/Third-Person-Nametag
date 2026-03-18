@@ -13,14 +13,16 @@ jobs:
         include:
           - name: Android SO
             runs-on: ubuntu-latest
-            artifact_name: libThirdPersonNametag
-            artifact_path: build/libThirdPersonNametag.so
+            artifact_name: libMod
+            artifact_path: build/libMod.so # CMakeLists.txt에서 정한 이름에 맞춰 확인
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runs-on }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive # 만약 나중에 서브모듈로 바꿀 경우를 대비
 
       - name: Set up NDK (Android)
         uses: nttld/setup-ndk@v1
