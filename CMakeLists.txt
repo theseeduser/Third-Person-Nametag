@@ -13,7 +13,7 @@ if(ANDROID)
 
     include(FetchContent)
 
-    # 1. fmt
+    # fmt 라이브러리 유지
     FetchContent_Declare(
             fmt
             GIT_REPOSITORY https://github.com/fmtlib/fmt.git
@@ -21,21 +21,7 @@ if(ANDROID)
     )
     FetchContent_MakeAvailable(fmt)
 
-    # 2. Dobby (에러 수정 부분)
-    # 문제가 되는 Closure Trampoline 기능을 강제로 끕니다. 
-    # 일반적인 DobbyHook 기능은 이 옵션 없이도 아주 잘 작동합니다.
-    set(DOBBY_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    set(DOBBY_GENERATE_SHARED_LIB OFF CACHE BOOL "" FORCE)
-    set(DOBBY_ENABLE_CLOSURE_TRAMPOLINE OFF CACHE BOOL "" FORCE) # <- 핵심: 이걸 꺼야 ASM 에러가 안 납니다.
-
-    FetchContent_Declare(
-            dobby
-            GIT_REPOSITORY https://github.com/jmpews/Dobby.git
-            GIT_TAG master
-    )
-    FetchContent_MakeAvailable(dobby)
-
-    # 3. preloader-android (기존 로직 유지)
+    # preloader 유지
     FetchContent_Declare(
             preloader_android
             GIT_REPOSITORY https://github.com/LiteLDev/preloader-android.git
@@ -57,7 +43,8 @@ if(ANDROID)
     target_link_libraries(preloader PUBLIC fmt::fmt)
     include_directories(${CMAKE_SOURCE_DIR}/src)
     
-    target_link_libraries(Mod preloader dobby log)
+    # Dobby 제거하고 깔끔하게 링크
+    target_link_libraries(Mod preloader log)
 
 else()
     target_compile_definitions(Mod PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
