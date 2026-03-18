@@ -32,7 +32,7 @@ void patch_memory(uintptr_t address, const std::vector<uint8_t>& patch) {
     size_t page_size = sysconf(_SC_PAGESIZE);
     uintptr_t page_start = address & ~(page_size - 1);
     
-    // 쓰기 권한 부여
+    // 쓰기 권한 부여 (넉넉하게 2페이지 분량)
     mprotect((void*)page_start, page_size * 2, PROT_READ | PROT_WRITE | PROT_EXEC);
     
     // 데이터 복사
@@ -52,19 +52,20 @@ void apply_fixes() {
         usleep(100000); 
     }
     
-    // 패치할 주소 (0x961B6A4)
+    // 패치할 주소 (지인분이 주신 0x961B6A4)
     uintptr_t targetAddr = mcpeBase + 0x961B6A4;
-    LOGI("Patching at: %p", (void*)targetAddr);
+    LOGI("Patching target address: %p", (void*)targetAddr);
 
-    // [중요] MOV W0, #1 (결과값 true) + RET (함수 즉시 종료)
-    // 튕김 방지를 위해 함수를 안전하게 끝내도록 RET(0xC0035FD6)를 추가했습니다.
+    // [해결책] 검은 화면 방지: RET 대신 NOP 사용
+    // 0x1F, 0x20, 0x03, 0xD5는 ARM64의 NOP(No Operation) 명령어입니다.
+    // 기존의 판단 로직(판치라 애니메이션 체크 등)을 무시하고 자연스럽게 다음 코드로 흐르게 합니다.
     std::vector<uint8_t> forceOnPatch = { 
-        0x20, 0x00, 0x80, 0x52, // MOV W0, #1
-        0xC0, 0x03, 0x5F, 0xD6  // RET
+        0x1F, 0x20, 0x03, 0xD5, // NOP (1번째 명령어 무력화)
+        0x1F, 0x20, 0x03, 0xD5  // NOP (2번째 명령어 무력화)
     };
     
     patch_memory(targetAddr, forceOnPatch);
-    LOGI("Patch Applied Successfully!");
+    LOGI("Memory patch applied with NOP. Testing panorama flow...");
 }
 
 // 라이브러리 로딩 시 별도 스레드에서 패치 실행
