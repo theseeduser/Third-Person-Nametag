@@ -13,8 +13,8 @@ jobs:
         include:
           - name: Android SO
             runs-on: ubuntu-latest
-            artifact_name: libForcePanoramaAnimation
-            artifact_path: build/libForcePanoramaAnimation.so
+            artifact_name: libThirdPersonNametag
+            artifact_path: build/libThirdPersonNametag.so
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runs-on }}
