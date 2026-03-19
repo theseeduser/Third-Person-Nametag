@@ -41,18 +41,19 @@ void apply_fixes() {
         usleep(500000);
     }
     
-    uintptr_t funcStart = mcpeBase + 0x961B6A4;
+    uintptr_t target = mcpeBase + 0x961B6A4;
 
-    // [전략 1] 모든 탈출 조건문(CBZ)을 NOP으로 제거 (길을 뚫음)
-    patch_mem(funcStart + 0x60, 0xD503201F); // CBZ X24 -> NOP
-    patch_mem(funcStart + 0x68, 0xD503201F); // CBZ W8  -> NOP
-    patch_mem(funcStart + 0x78, 0xD503201F); // CBZ X21 -> NOP
+    /* [최종 병기: Force Return 1]
+       함수의 입구에서 바로 1을 반환하고 나가게 만듭니다.
+       이래도 안 된다면 이 함수는 파노라마와 상관없는 함수일 확률이 99%입니다.
+    */
+    
+    // 1. MOV W0, #1  (결과값을 1로 설정)
+    patch_mem(target + 0x0, 0x20008052); 
+    // 2. RET         (함수 즉시 종료)
+    patch_mem(target + 0x4, 0xC0035FD6); 
 
-    // [전략 2] 함수의 리턴값을 강제로 '활성화(1)' 상태로 고정
-    // 함수 끝부분의 return unaff_w19 | bVar1; 로직을 MOV W0, #1; RET; 로 덮어씌울 수 있지만
-    // 일단은 위 패치만으로 메인 메뉴 진입 후를 확인해야 합니다.
-
-    LOGI("Patches applied at +60, +68, +78. Please enter the MAIN MENU.");
+    LOGI("Force Return Patch Applied. 만약 메인 메뉴에서도 변화가 없다면 주소가 틀린 것입니다.");
 }
 
 __attribute__((constructor))
