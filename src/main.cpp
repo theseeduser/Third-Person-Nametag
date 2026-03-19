@@ -5,8 +5,6 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <pthread.h>
-#include <vector>
-#include <stdio.h>
 
 #define LOG_TAG "PanoramaMod"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -27,23 +25,12 @@ uintptr_t get_module_base(const char* module_name) {
     return addr;
 }
 
-// [중요] 함수 내부를 128바이트만큼 덤프하여 분석합니다.
-void dump_panorama_logic(uintptr_t address) {
-    uint8_t buffer[128];
-    memcpy(buffer, (void*)address, 128);
-    
-    LOGI("--- Panorama Function Hex Dump (128 bytes) ---");
-    for (int i = 0; i < 128; i += 16) {
-        char hex_line[128] = {0};
-        sprintf(hex_line, "+%02X: %02X %02X %02X %02X | %02X %02X %02X %02X | %02X %02X %02X %02X | %02X %02X %02X %02X",
-                i,
-                buffer[i], buffer[i+1], buffer[i+2], buffer[i+3],
-                buffer[i+4], buffer[i+5], buffer[i+6], buffer[i+7],
-                buffer[i+8], buffer[i+9], buffer[i+10], buffer[i+11],
-                buffer[i+12], buffer[i+13], buffer[i+14], buffer[i+15]);
-        LOGI("%s", hex_line);
-    }
-    LOGI("--- End of Dump ---");
+void patch_mem(uintptr_t address, uint32_t data) {
+    size_t pageSize = sysconf(_SC_PAGESIZE);
+    uintptr_t start = address & ~(pageSize - 1);
+    mprotect((void*)start, pageSize, PROT_READ | PROT_WRITE | PROT_EXEC);
+    *(uint32_t*)address = data;
+    mprotect((void*)start, pageSize, PROT_READ | PROT_EXEC);
 }
 
 void apply_fixes() {
@@ -52,13 +39,26 @@ void apply_fixes() {
         usleep(500000);
     }
     
-    uintptr_t targetAddr = mcpeBase + 0x961B6A4;
-    LOGI("Analyzing target at: %p", (void*)targetAddr);
+    // 입구(0x961B6A4)는 절대 건드리지 않습니다! (크래시 원인)
+    uintptr_t funcStart = mcpeBase + 0x961B6A4;
 
-    // 패치는 하지 않고 데이터만 읽어옵니다. (크래시 방지)
-    dump_panorama_logic(targetAddr);
+    // --- [테스트 구간] 아래 3개 중 하나씩 주석을 해제하며 확인해보세요 ---
     
-    LOGI("분석 완료! 로그캣의 Hex 데이터를 복사해서 알려주세요.");
+    // 후보 1: +60 지점 스위치 끄기
+    patch_mem(funcStart + 0x60, 0xD503201F); // NOP
+    LOGI("Test Patch 1 (+60) Applied");
+
+    /* 후보 2: +68 지점 스위치 끄기 (1번이 안되면 1번을 다시 주석처리하고 이걸 해제)
+    patch_mem(funcStart + 0x68, 0xD503201F); // NOP
+    LOGI("Test Patch 2 (+68) Applied");
+    */
+
+    /* 후보 3: +78 지점 스위치 끄기
+    patch_mem(funcStart + 0x78, 0xD503201F); // NOP
+    LOGI("Test Patch 3 (+78) Applied");
+    */
+
+    LOGI("Patch session complete. Check the main screen!");
 }
 
 __attribute__((constructor))
