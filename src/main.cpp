@@ -27,16 +27,23 @@ uintptr_t get_module_base(const char* module_name) {
     return addr;
 }
 
-// 분석용 메모리 덤프 함수
-void dump_instructions(uintptr_t address, size_t size) {
-    uint8_t buffer[32];
-    memcpy(buffer, (void*)address, size);
+// [중요] 함수 내부를 128바이트만큼 덤프하여 분석합니다.
+void dump_panorama_logic(uintptr_t address) {
+    uint8_t buffer[128];
+    memcpy(buffer, (void*)address, 128);
     
-    char hex_out[128] = {0};
-    for(size_t i=0; i<size; i++) {
-        sprintf(hex_out + strlen(hex_out), "%02X ", buffer[i]);
+    LOGI("--- Panorama Function Hex Dump (128 bytes) ---");
+    for (int i = 0; i < 128; i += 16) {
+        char hex_line[128] = {0};
+        sprintf(hex_line, "+%02X: %02X %02X %02X %02X | %02X %02X %02X %02X | %02X %02X %02X %02X | %02X %02X %02X %02X",
+                i,
+                buffer[i], buffer[i+1], buffer[i+2], buffer[i+3],
+                buffer[i+4], buffer[i+5], buffer[i+6], buffer[i+7],
+                buffer[i+8], buffer[i+9], buffer[i+10], buffer[i+11],
+                buffer[i+12], buffer[i+13], buffer[i+14], buffer[i+15]);
+        LOGI("%s", hex_line);
     }
-    LOGI("Address %p Hex: %s", (void*)address, hex_out);
+    LOGI("--- End of Dump ---");
 }
 
 void apply_fixes() {
@@ -46,12 +53,12 @@ void apply_fixes() {
     }
     
     uintptr_t targetAddr = mcpeBase + 0x961B6A4;
-    LOGI("Analyzing Panorama Function at: %p", (void*)targetAddr);
+    LOGI("Analyzing target at: %p", (void*)targetAddr);
 
-    // [중요] 일단 튕기지 않게 패치는 하지 않고 내부 코드만 로그로 찍습니다.
-    dump_instructions(targetAddr, 32);
+    // 패치는 하지 않고 데이터만 읽어옵니다. (크래시 방지)
+    dump_panorama_logic(targetAddr);
     
-    LOGI("분석 로그 출력 완료. 기드라 화면이나 위 Hex 값을 알려주세요!");
+    LOGI("분석 완료! 로그캣의 Hex 데이터를 복사해서 알려주세요.");
 }
 
 __attribute__((constructor))
