@@ -1,19 +1,74 @@
+#include <jni.h>
+#include <android/log.h>
+#include <unistd.h>
+#include <stdint.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <pthread.h>
+#include <vector>
+
+#define LOG_TAG "PanoramaMod"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+
+// 모듈 베이스 주소를 가져오는 함수
+uintptr_t get_module_base(const char* module_name) {
+    uintptr_t addr = 0;
+    char line[1024];
+    FILE* fp = fopen("/proc/self/maps", "rt");
+    if (fp) {
+        while (fgets(line, sizeof(line), fp)) {
+            if (strstr(line, module_name)) {
+                addr = (uintptr_t)strtoul(line, NULL, 16);
+                break;
+            }
+        }
+        fclose(fp);
+    }
+    return addr;
+}
+
+// 메모리 보호 권한을 풀고 데이터를 쓰는 함수
+void patch_memory(uintptr_t address, const std::vector<uint8_t>& patch) {
+    size_t page_size = sysconf(_SC_PAGESIZE);
+    uintptr_t page_start = address & ~(page_size - 1);
+    
+    // 쓰기 권한 부여
+    mprotect((void*)page_start, page_size * 2, PROT_READ | PROT_WRITE | PROT_EXEC);
+    
+    // 데이터 복사
+    memcpy((void*)address, patch.data(), patch.size());
+    
+    // CPU 명령 캐시 비우기 (매우 중요)
+    __builtin___clear_cache((char*)address, (char*)address + patch.size());
+    
+    // 권한 복구
+    mprotect((void*)page_start, page_size * 2, PROT_READ | PROT_EXEC);
+}
+
 void apply_fixes() {
     uintptr_t mcpeBase = 0;
+    // libminecraftpe.so가 로드될 때까지 대기
     while (!(mcpeBase = get_module_base("libminecraftpe.so"))) {
         usleep(100000); 
     }
     
+    // 패치할 주소 (0x961B6A4)
     uintptr_t targetAddr = mcpeBase + 0x961B6A4;
     LOGI("Patching target address: %p", (void*)targetAddr);
 
     // [수정] 딱 4바이트(명령어 1개)만 NOP으로 만듭니다.
-    // 만약 이 자리가 "애니메이션 꺼졌으면 점프해라(CBZ 등)" 였다면 
-    // 점프를 안 하고 그대로 파노라마를 실행하게 됩니다.
+    // 다른 중요한 메모리 로드(LDR) 명령어를 건드리지 않기 위해 1줄만 지웁니다.
     std::vector<uint8_t> forceOnPatch = { 
         0x1F, 0x20, 0x03, 0xD5  // NOP (딱 1줄만 무력화)
     };
     
     patch_memory(targetAddr, forceOnPatch);
-    LOGI("4-byte NOP Patch Applied! Testing...");
+    LOGI("4-byte NOP Patch Applied! Flow continued.");
+}
+
+// 라이브러리 로딩 시 별도 스레드에서 패치 실행
+__attribute__((constructor))
+void init() {
+    pthread_t t;
+    pthread_create(&t, NULL, (void* (*)(void*))apply_fixes, NULL);
 }
