@@ -38,6 +38,8 @@ void patch_mem(uintptr_t address, uint32_t data) {
     mprotect((void*)start, pageSize, PROT_READ | PROT_EXEC);
 }
 
+// ... (위의 헤더와 get_module_base 함수는 동일하게 유지)
+
 void apply_fixes() {
     uintptr_t mcpeBase = 0;
     while (!(mcpeBase = get_module_base("libminecraftpe.so"))) {
@@ -46,20 +48,19 @@ void apply_fixes() {
     
     uintptr_t funcStart = mcpeBase + 0x961B6A4;
 
-    // --- [테스트 구간] 후보 1번부터 시도합니다 ---
+    // [전략] 의심되는 모든 '건너뛰기'를 한꺼번에 무력화합니다.
     
-    /* 후보 1: +60 지점 (98 01 00 B4) 패치
-    patch_mem(funcStart + 0x60, 0xD503201F); // NOP 처리
-    LOGI("Test Patch 1 (+60) Applied");
-    */
-    // 후보 2: 1번이 효과 없으면 나중에 교체해서 테스트
+    // 후보 1: CBZ X24 (0이면 점프) 무력화
+    patch_mem(funcStart + 0x60, 0xD503201F); 
+    
+    // 후보 2: CBZ W8 (0이면 점프) 무력화
     patch_mem(funcStart + 0x68, 0xD503201F); 
+    
+    // 후보 3: CBZ X21 (0이면 점프) 무력화 -> 새로 추가
+    patch_mem(funcStart + 0x78, 0xD503201F); 
 
-    LOGI("Patch applied. Checking for panorama...");
-}
-
-__attribute__((constructor))
-void init() {
-    pthread_t t;
-    pthread_create(&t, NULL, (void* (*)(void*))apply_fixes, NULL);
+    // 후보 4: 만약 중간에 강제 리턴(RET)이 있다면? 
+    // 이 지점 근처에 0x00이나 다른 값으로 리턴하는 구간이 있을 수 있습니다.
+    
+    LOGI("All potential switches (+60, +68, +78) patched at once.");
 }
