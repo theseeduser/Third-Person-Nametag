@@ -48,13 +48,12 @@ void apply_fixes() {
 
     // --- [테스트 구간] 후보 1번부터 시도합니다 ---
     
-    // 후보 1: +60 지점 (98 01 00 B4) 패치
+    /* 후보 1: +60 지점 (98 01 00 B4) 패치
     patch_mem(funcStart + 0x60, 0xD503201F); // NOP 처리
     LOGI("Test Patch 1 (+60) Applied");
-
-    /* 후보 2: 1번이 효과 없으면 나중에 교체해서 테스트
-    patch_mem(funcStart + 0x68, 0xD503201F); 
     */
+    // 후보 2: 1번이 효과 없으면 나중에 교체해서 테스트
+    patch_mem(funcStart + 0x68, 0xD503201F); 
 
     LOGI("Patch applied. Checking for panorama...");
 }
